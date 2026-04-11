@@ -25,21 +25,40 @@ export async function middleware(request: NextRequest) {
     }
   )
 
-  await supabase.auth.getUser()
+  // ── Single getUser call (reused below) ──────────────────────
+  const { data: { user } } = await supabase.auth.getUser()
 
-  if (request.nextUrl.pathname.startsWith('/creator')) {
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return NextResponse.redirect(new URL('/login', request.url))
+  const { pathname } = request.nextUrl
+
+  // ── Unauthenticated: redirect to login ──────────────────────
+  if (!user) {
+    const url = request.nextUrl.clone()
+    url.pathname = '/login'
+    url.searchParams.set('redirectTo', pathname)
+    return NextResponse.redirect(url)
   }
 
-  if (request.nextUrl.pathname.startsWith('/dashboard')) {
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return NextResponse.redirect(new URL('/login', request.url))
+  // ── Creator routes: must have creator role ──────────────────
+  if (pathname.startsWith('/creator')) {
+    const { data: profile } = await supabase
+      .from('users')
+      .select('role')
+      .eq('id', user.id)
+      .single()
+
+    if (profile?.role !== 'creator') {
+      return NextResponse.redirect(new URL('/dashboard', request.url))
+    }
   }
 
   return supabaseResponse
 }
 
 export const config = {
-  matcher: ['/creator/:path*', '/dashboard/:path*'],
+  matcher: [
+    '/creator/:path*',
+    '/dashboard/:path*',
+    '/modules/:path*',
+    '/enroll/:path*',
+  ],
 }
