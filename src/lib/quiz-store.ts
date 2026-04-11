@@ -119,7 +119,7 @@ export const useQuizStore = create<QuizStore>()(
         const timeTaken = questionStartTime
           ? Math.round((Date.now() - questionStartTime) / 1000)
           : 0
-        const isCorrect = selected === q.correct_answer
+        const isCorrect = selected === q.answer
 
         set((s) => ({
           answers: {

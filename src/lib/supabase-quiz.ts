@@ -3,14 +3,10 @@ import { createClient } from '@/lib/supabase'
 export type Question = {
   id: string
   topic_id: string
-  question_text: string
-  option_a: string
-  option_b: string
-  option_c: string
-  option_d: string
-  correct_answer: 'A' | 'B' | 'C' | 'D'
+  question: string
+  choices: string[]
+  answer: 'A' | 'B' | 'C' | 'D'
   explanation: string | null
-  difficulty: 'easy' | 'medium' | 'hard' | null
 }
 
 export type Topic = {
@@ -144,7 +140,7 @@ export async function enrollWithCode(code: string): Promise<{
 
   const { data: accessCode, error: codeError } = await supabase
     .from('access_codes')
-    .select('*, modules(id, name)')
+    .select('*, modules(id, title)')
     .eq('code', code.toUpperCase().trim())
     .eq('is_active', true)
     .single()
@@ -172,7 +168,7 @@ export async function enrollWithCode(code: string): Promise<{
     return {
       success: true,
       moduleId: accessCode.module_id,
-      moduleName: (accessCode.modules as any)?.name,
+      moduleName: (accessCode.modules as any)?.title,
     }
   }
 
@@ -194,7 +190,7 @@ export async function enrollWithCode(code: string): Promise<{
   return {
     success: true,
     moduleId: accessCode.module_id,
-    moduleName: (accessCode.modules as any)?.name,
+    moduleName: (accessCode.modules as any)?.title,
   }
 }
 

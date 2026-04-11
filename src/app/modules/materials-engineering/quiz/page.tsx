@@ -170,14 +170,14 @@ export default function QuizPage() {
         </p>
 
         {/* Question text */}
-        <p className="text-lg text-white leading-relaxed mb-8">{q.question_text}</p>
+        <p className="text-lg text-white leading-relaxed mb-8">{q.question}</p>
 
         {/* Options */}
         <div className="space-y-3 mb-8">
-          {(['A', 'B', 'C', 'D'] as const).map((opt) => {
-            const text = q[`option_${opt.toLowerCase()}` as keyof typeof q] as string
-            const isSelected = userAnswer?.selected === opt
-            const isCorrect = q.correct_answer === opt
+          {(['A', 'B', 'C', 'D'] as const).map((opt, idx) => {
+  const text = q.choices[idx] ?? ''
+  const isSelected = userAnswer?.selected === opt
+  const isCorrect = q.answer === opt
             const showResult = isOpen && isReview
 
             let cls = 'border-zinc-800 hover:border-zinc-600'
