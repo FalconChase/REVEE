@@ -24,12 +24,10 @@ export type ExamResult = {
   user_id: string
   module_id: string
   score: number
-  total_questions: number
+  total: number
   percentage: number
-  quiz_mode: QuizMode
-  topic_breakdown: Record<string, { correct: number; total: number }>
-  time_taken_seconds: number
-  created_at: string
+  mode: string
+  taken_at: string
 }
 
 const MATERIALS_MODULE_ID = '7beeda81-5b89-4844-a671-f158297920f0'
@@ -228,15 +226,13 @@ export async function submitExamResult(payload: {
   const { data, error } = await supabase
     .from('exam_results')
     .insert({
-      user_id: user.id,
-      module_id: payload.moduleId,
-      score: payload.score,
-      total_questions: payload.totalQuestions,
-      percentage,
-      quiz_mode: payload.quizMode,
-      topic_breakdown: payload.topicBreakdown,
-      time_taken_seconds: payload.timeTakenSeconds,
-    })
+    user_id: user.id,
+    module_id: payload.moduleId,
+    score: payload.score,
+    total: payload.totalQuestions,
+    percentage,
+    mode: payload.quizMode,
+  })
     .select('id')
     .single()
 
@@ -253,7 +249,7 @@ export async function getUserResults(moduleId?: string): Promise<ExamResult[]> {
     .from('exam_results')
     .select('*')
     .eq('user_id', user.id)
-    .order('created_at', { ascending: false })
+    .order('taken_at', { ascending: false })
 
   if (moduleId) query = query.eq('module_id', moduleId)
 
@@ -301,7 +297,7 @@ export async function getCreatorModuleStats(moduleId: string) {
       .from('access_codes')
       .select('*')
       .eq('module_id', moduleId)
-      .order('created_at', { ascending: false }),
+      .order('taken_at', { ascending: false }),
     supabase
       .from('module_enrollments')
       .select('*, users(email, full_name)')
@@ -311,7 +307,7 @@ export async function getCreatorModuleStats(moduleId: string) {
       .from('exam_results')
       .select('*')
       .eq('module_id', moduleId)
-      .order('created_at', { ascending: false }),
+      .order('taken_at', { ascending: false }),
   ])
 
   return {

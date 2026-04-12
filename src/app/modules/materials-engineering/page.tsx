@@ -177,10 +177,10 @@ export default function MaterialsEngineeringPage() {
                       {r.percentage}%
                     </span>
                     <span className="text-zinc-400 text-sm capitalize flex-1">
-                      {QUIZ_MODE_CONFIG[r.quiz_mode as keyof typeof QUIZ_MODE_CONFIG]?.label ?? r.quiz_mode}
+                      {QUIZ_MODE_CONFIG[r.mode as keyof typeof QUIZ_MODE_CONFIG]?.label ?? r.mode}
                     </span>
                     <span className="text-zinc-600 text-xs">
-                      {new Date(r.created_at).toLocaleDateString('en-PH', {
+                      {new Date(r.taken_at).toLocaleDateString('en-PH', {
                         month: 'short', day: 'numeric', year: 'numeric',
                       })}
                     </span>

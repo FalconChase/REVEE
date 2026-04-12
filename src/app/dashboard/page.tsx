@@ -21,16 +21,16 @@ type User = {
 
 type Module = {
   id: string
-  name: string
+  title: string
   description: string | null
-  subject_code: string | null
+  slug: string | null
 }
 
 type RecentResult = {
   id: string
   percentage: number
-  quiz_mode: string
-  created_at: string
+  mode: string
+  taken_at: string
 }
 
 // ============================================================
@@ -85,7 +85,7 @@ export default function DashboardPage() {
       // Load enrolled modules
       const { data: enrollments } = await supabase
         .from('module_enrollments')
-        .select('module_id, modules(id, name, description, subject_code)')
+        .select('module_id, modules(id, title, description, slug)')
         .eq('user_id', authUser.id)
 
       const mods = (enrollments ?? [])
@@ -174,13 +174,13 @@ export default function DashboardPage() {
                   href="/modules/materials-engineering"
                   className="block border border-zinc-800 rounded-xl p-6 hover:border-zinc-600 transition group"
                 >
-                  {mod.subject_code && (
+                  {mod.slug && (
                     <p className="text-xs text-zinc-500 uppercase tracking-widest mb-1">
-                      {mod.subject_code}
+                      {mod.slug}
                     </p>
                   )}
                   <h3 className="font-semibold text-white group-hover:text-zinc-200 transition">
-                    {mod.name}
+                    {mod.title}
                   </h3>
                   {mod.description && (
                     <p className="text-zinc-500 text-sm mt-1">{mod.description}</p>
@@ -214,10 +214,10 @@ export default function DashboardPage() {
                       {r.percentage}%
                     </span>
                     <span className="text-zinc-400 text-sm capitalize flex-1">
-                      {r.quiz_mode} mode
+                      {r.mode} mode
                     </span>
                     <span className="text-zinc-600 text-xs">
-                      {new Date(r.created_at).toLocaleDateString('en-PH', {
+                      {new Date(r.taken_at).toLocaleDateString('en-PH', {
                         month: 'short',
                         day: 'numeric',
                       })}
