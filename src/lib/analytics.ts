@@ -1,4 +1,4 @@
-import { createClientComponentClient } from "@supabase/auth-helpers-nextjs";
+import { createClient } from "@/lib/supabase";
 
 export interface ScoreTrend {
   date: string;
@@ -48,7 +48,7 @@ export interface LearnerAnalytics {
 }
 
 export async function fetchLearnerAnalytics(userId: string): Promise<LearnerAnalytics> {
-  const supabase = createClientComponentClient();
+  const supabase = createClient();
 
   const { data: results, error } = await supabase
     .from("exam_results")
@@ -176,7 +176,7 @@ export async function fetchLearnerAnalytics(userId: string): Promise<LearnerAnal
 }
 
 export async function fetchCreatorStats(userId: string): Promise<CreatorStats> {
-  const supabase = createClientComponentClient();
+  const supabase = createClient();
 
   const [modulesRes, enrollmentsRes, resultsRes] = await Promise.all([
     supabase
@@ -214,11 +214,11 @@ export async function fetchCreatorStats(userId: string): Promise<CreatorStats> {
   const results = resultsRes.data || [];
 
   // Enrollments by module
-  const enrollByModule = new Map<string, { title: string; count: number }>();
+  const enrollByModule = new Map<string, { module_title: string; count: number }>();
   for (const e of enrollments) {
     const mid = e.module_id;
-    const title = (e.modules as any)?.title || "Unknown";
-    if (!enrollByModule.has(mid)) enrollByModule.set(mid, { title, count: 0 });
+    const module_title = (e.modules as any)?.title || "Unknown";
+    if (!enrollByModule.has(mid)) enrollByModule.set(mid, { module_title, count: 0 });
     enrollByModule.get(mid)!.count++;
   }
 
