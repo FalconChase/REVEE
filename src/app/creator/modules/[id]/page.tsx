@@ -272,7 +272,7 @@ export default function CreatorModulePage() {
                         {QUIZ_MODE_CONFIG[r.quiz_mode as keyof typeof QUIZ_MODE_CONFIG]?.label ?? r.quiz_mode}
                       </span>
                       <span className="text-zinc-600 text-xs">
-                        {new Date(r.created_at).toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })}
+                        {new Date(r.taken_at).toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })}
                       </span>
                     </div>
                   )

@@ -297,10 +297,10 @@ export async function getCreatorModuleStats(moduleId: string) {
       .from('access_codes')
       .select('*')
       .eq('module_id', moduleId)
-      .order('taken_at', { ascending: false }),
+      .order('created_at', { ascending: false }),
     supabase
       .from('module_enrollments')
-      .select('*, users(email, full_name)')
+      .select('*')
       .eq('module_id', moduleId)
       .order('enrolled_at', { ascending: false }),
     supabase
@@ -309,10 +309,22 @@ export async function getCreatorModuleStats(moduleId: string) {
       .eq('module_id', moduleId)
       .order('taken_at', { ascending: false }),
   ])
+// Fetch user details separately for each enrollment
+  const enrollments = enrollmentsRes.data ?? []
+  const enrichedEnrollments = await Promise.all(
+    enrollments.map(async (e) => {
+      const { data: userData } = await supabase
+        .rpc('get_user_profile', { user_id: e.user_id })
+      return {
+        ...e,
+        users: userData?.[0] ?? null
+      }
+    })
+  )
 
   return {
     codes: codesRes.data ?? [],
-    enrollments: enrollmentsRes.data ?? [],
+    enrollments: enrichedEnrollments,
     results: resultsRes.data ?? [],
   }
 }
