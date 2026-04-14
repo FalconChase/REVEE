@@ -1,36 +1,44 @@
-import { createServerClient } from "@supabase/ssr";
-import { cookies } from "next/headers";
-import { redirect } from "next/navigation";
-import { fetchCreatorStats } from "@/lib/analytics";
+'use client'
+
+import { useEffect, useState } from "react";
+import { createClient } from "@/lib/supabase";
+import { useRouter } from "next/navigation";
+import { fetchCreatorStats, CreatorStats } from "@/lib/analytics";
 import { CreatorStatsPanel } from "@/components/analytics/CreatorStatsPanel";
 import Link from "next/link";
 import { ArrowLeft, BarChart2 } from "lucide-react";
 
-export const dynamic = "force-dynamic";
+export default function CreatorAnalyticsPage() {
+  const supabase = createClient();
+  const router = useRouter();
+  const [stats, setStats] = useState<CreatorStats | null>(null);
+  const [loading, setLoading] = useState(true);
 
-export default async function CreatorAnalyticsPage() {
-  const cookieStore = await cookies();
-const supabase = createServerClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-  { cookies: { get: (name) => cookieStore.get(name)?.value } }
-);
-  const {
-    data: { session },
-  } = await supabase.auth.getSession();
+  useEffect(() => {
+    async function load() {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) { router.push("/login"); return; }
 
-  if (!session) redirect("/login");
+      const { data: profile } = await supabase
+        .from("users")
+        .select("role")
+        .eq("id", user.id)
+        .single();
 
-  // Check role
-  const { data: user } = await supabase
-    .from("users")
-    .select("role")
-    .eq("id", session.user.id)
-    .single();
+      if (!profile || profile.role !== "creator") { router.push("/dashboard"); return; }
 
-  if (!user || user.role !== "creator") redirect("/dashboard");
+      const data = await fetchCreatorStats(user.id);
+      setStats(data);
+      setLoading(false);
+    }
+    load();
+  }, []);
 
-  const stats = await fetchCreatorStats(session.user.id);
+  if (loading) return (
+    <main className="min-h-screen bg-[#060d17] text-white flex items-center justify-center">
+      <p className="text-slate-400 text-sm animate-pulse">Loading analytics...</p>
+    </main>
+  );
 
   return (
     <main className="min-h-screen bg-[#060d17] text-white">
@@ -59,7 +67,7 @@ const supabase = createServerClient(
           </div>
         </div>
 
-        <CreatorStatsPanel stats={stats} />
+        {stats && <CreatorStatsPanel stats={stats} />}
       </div>
     </main>
   );

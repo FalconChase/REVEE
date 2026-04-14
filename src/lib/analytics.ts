@@ -177,39 +177,30 @@ export async function fetchLearnerAnalytics(userId: string): Promise<LearnerAnal
 
 export async function fetchCreatorStats(userId: string): Promise<CreatorStats> {
   const supabase = createClient();
+  
+ const modulesRes = await supabase
+  .from("modules")
+  .select("id, title")
+  .eq("created_by", userId);
 
-  const [modulesRes, enrollmentsRes, resultsRes] = await Promise.all([
-    supabase
-      .from("modules")
-      .select("id, title")
-      .eq("created_by", userId),
-    supabase
-      .from("module_enrollments")
-      .select("module_id, modules(title)")
-      .in(
-        "module_id",
-        (
-          await supabase
-            .from("modules")
-            .select("id")
-            .eq("created_by", userId)
-        ).data?.map((m) => m.id) || []
-      ),
-    supabase
-      .from("exam_results")
-      .select("percentage, topic_id, module_id, question_topics(name), modules(title)")
-      .in(
-        "module_id",
-        (
-          await supabase
-            .from("modules")
-            .select("id")
-            .eq("created_by", userId)
-        ).data?.map((m) => m.id) || []
-      ),
-  ]);
+const moduleIds = (modulesRes.data || []).map((m) => m.id);
 
-  const modules = modulesRes.data || [];
+const [enrollmentsRes, resultsRes] = await Promise.all([
+  moduleIds.length === 0
+    ? Promise.resolve({ data: [] })
+    : supabase
+        .from("module_enrollments")
+        .select("module_id, user_id, modules(title)")
+        .in("module_id", moduleIds),
+  moduleIds.length === 0
+    ? Promise.resolve({ data: [] })
+    : supabase
+        .from("exam_results")
+        .select("percentage, topic_id, module_id, question_topics(name), modules(title)")
+        .in("module_id", moduleIds),
+]);
+
+  
   const enrollments = enrollmentsRes.data || [];
   const results = resultsRes.data || [];
 
@@ -257,8 +248,8 @@ export async function fetchCreatorStats(userId: string): Promise<CreatorStats> {
   }
 
   return {
-    total_modules: modules.length,
-    total_enrolled: enrollments.length,
+    total_modules: moduleIds.length,
+   total_enrolled: new Set(enrollments.map((e) => e.user_id)).size,
     total_exam_results: results.length,
     avg_score_across_modules:
       results.length > 0

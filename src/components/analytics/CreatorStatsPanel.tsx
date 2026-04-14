@@ -23,7 +23,7 @@ const DistTooltip = ({ active, payload }: any) => {
   return (
     <div className="bg-[#0d1b2e] border border-cyan-900/40 rounded-lg px-3 py-2 shadow-xl">
       <p className="text-white text-sm font-bold">{payload[0].payload.range}</p>
-      <p className="text-cyan-400 text-sm">{payload[0].value} students</p>
+      <p className="text-cyan-400 text-sm">{payload[0].value} exams</p>
     </div>
   );
 };
