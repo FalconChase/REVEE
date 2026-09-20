@@ -1,7 +1,9 @@
-import { createServerClient } from "@supabase/ssr";
-import { cookies } from "next/headers";
-import { redirect } from "next/navigation";
-import { fetchLearnerAnalytics } from "@/lib/analytics";
+'use client'
+
+import { useEffect, useState } from "react";
+import { createClient } from "@/lib/supabase";
+import { useRouter } from "next/navigation";
+import { fetchLearnerAnalytics, LearnerAnalytics } from "@/lib/analytics";
 import { ScoreTrendChart } from "@/components/analytics/ScoreTrendChart";
 import { TopicHeatmap } from "@/components/analytics/TopicHeatmap";
 import { PerformanceStats } from "@/components/analytics/PerformanceStats";
@@ -9,26 +11,32 @@ import { ModuleBreakdown } from "@/components/analytics/ModuleBreakdown";
 import Link from "next/link";
 import { ArrowLeft, BarChart2 } from "lucide-react";
 
-export const dynamic = "force-dynamic";
+export default function AnalyticsPage() {
+  const supabase = createClient();
+  const router = useRouter();
+  const [analytics, setAnalytics] = useState<LearnerAnalytics | null>(null);
+  const [loading, setLoading] = useState(true);
 
-export default async function AnalyticsPage() {
- const cookieStore = await cookies();
-const supabase = createServerClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-  { cookies: { get: (name) => cookieStore.get(name)?.value } }
-);
-  const {
-    data: { session },
-  } = await supabase.auth.getSession();
+  useEffect(() => {
+    async function load() {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) { router.push("/login"); return; }
 
-  if (!session) redirect("/login");
+      const data = await fetchLearnerAnalytics(user.id);
+      setAnalytics(data);
+      setLoading(false);
+    }
+    load();
+  }, []);
 
-  const analytics = await fetchLearnerAnalytics(session.user.id);
+  if (loading) return (
+    <main className="min-h-screen bg-[#060d17] text-white flex items-center justify-center">
+      <p className="text-slate-400 text-sm animate-pulse">Loading analytics...</p>
+    </main>
+  );
 
   return (
     <main className="min-h-screen bg-[#060d17] text-white">
-      {/* Blueprint grid overlay */}
       <div
         className="fixed inset-0 pointer-events-none opacity-[0.04]"
         style={{
@@ -39,7 +47,6 @@ const supabase = createServerClient(
       />
 
       <div className="relative z-10 max-w-6xl mx-auto px-4 py-8">
-        {/* Header */}
         <div className="flex items-center gap-4 mb-8">
           <Link
             href="/dashboard"
@@ -51,22 +58,18 @@ const supabase = createServerClient(
           <div className="h-4 w-px bg-slate-700" />
           <div className="flex items-center gap-2">
             <BarChart2 size={20} className="text-cyan-400" />
-            <h1 className="text-xl font-bold tracking-tight">
-              Performance Analytics
-            </h1>
+            <h1 className="text-xl font-bold tracking-tight">Performance Analytics</h1>
           </div>
         </div>
 
-        {analytics.total_exams === 0 ? (
-          /* Empty state */
+        {analytics?.total_exams === 0 ? (
           <div className="flex flex-col items-center justify-center py-24 text-center">
             <div className="w-16 h-16 rounded-2xl bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center mb-4">
               <BarChart2 size={28} className="text-cyan-400" />
             </div>
             <h2 className="text-xl font-bold mb-2">No Data Yet</h2>
             <p className="text-slate-400 text-sm max-w-sm">
-              Take your first exam to start tracking your performance and
-              identifying areas to improve.
+              Take your first exam to start tracking your performance and identifying areas to improve.
             </p>
             <Link
               href="/dashboard"
@@ -77,53 +80,36 @@ const supabase = createServerClient(
           </div>
         ) : (
           <div className="space-y-6">
-            {/* Stat cards */}
             <PerformanceStats
-              totalExams={analytics.total_exams}
-              avgPercentage={analytics.avg_percentage}
-              bestPercentage={analytics.best_percentage}
-              improvement={analytics.improvement}
-              streakDays={analytics.streak_days}
+              totalExams={analytics!.total_exams}
+              avgPercentage={analytics!.avg_percentage}
+              bestPercentage={analytics!.best_percentage}
+              improvement={analytics!.improvement}
+              streakDays={analytics!.streak_days}
             />
 
-            {/* Score Trend + Module Breakdown row */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              {/* Score trend — wider */}
               <div className="lg:col-span-2 bg-slate-900/60 border border-slate-700/50 rounded-xl p-5">
-                <h2 className="text-sm font-semibold text-slate-300 uppercase tracking-wide mb-4">
-                  Score Trend
-                </h2>
-                <ScoreTrendChart data={analytics.score_trends} />
+                <h2 className="text-sm font-semibold text-slate-300 uppercase tracking-wide mb-4">Score Trend</h2>
+                <ScoreTrendChart data={analytics!.score_trends} />
               </div>
-
-              {/* Module breakdown */}
               <div className="bg-slate-900/60 border border-slate-700/50 rounded-xl p-5">
-                <h2 className="text-sm font-semibold text-slate-300 uppercase tracking-wide mb-4">
-                  By Module
-                </h2>
-                <ModuleBreakdown data={analytics.module_performance} />
+                <h2 className="text-sm font-semibold text-slate-300 uppercase tracking-wide mb-4">By Module</h2>
+                <ModuleBreakdown data={analytics!.module_performance} />
               </div>
             </div>
 
-            {/* Topic Heatmap */}
             <div className="bg-slate-900/60 border border-slate-700/50 rounded-xl p-5">
               <div className="flex items-center justify-between mb-4">
-                <h2 className="text-sm font-semibold text-slate-300 uppercase tracking-wide">
-                  Topic Weakness Heatmap
-                </h2>
-                <span className="text-xs text-slate-500 font-mono">
-                  Sorted: weakest first
-                </span>
+                <h2 className="text-sm font-semibold text-slate-300 uppercase tracking-wide">Topic Weakness Heatmap</h2>
+                <span className="text-xs text-slate-500 font-mono">Sorted: weakest first</span>
               </div>
-              <TopicHeatmap data={analytics.topic_performance} />
+              <TopicHeatmap data={analytics!.topic_performance} />
             </div>
 
-            {/* Recent activity table */}
-            {analytics.score_trends.length > 0 && (
+            {analytics!.score_trends.length > 0 && (
               <div className="bg-slate-900/60 border border-slate-700/50 rounded-xl p-5">
-                <h2 className="text-sm font-semibold text-slate-300 uppercase tracking-wide mb-4">
-                  Recent Exams
-                </h2>
+                <h2 className="text-sm font-semibold text-slate-300 uppercase tracking-wide mb-4">Recent Exams</h2>
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead>
@@ -135,40 +121,20 @@ const supabase = createServerClient(
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-800/50">
-                      {[...analytics.score_trends]
-                        .reverse()
-                        .slice(0, 10)
-                        .map((exam, i) => (
-                          <tr
-                            key={i}
-                            className="text-slate-300 hover:bg-slate-800/30 transition-colors"
-                          >
-                            <td className="py-2.5 font-mono text-xs text-slate-500">
-                              {exam.date}
-                            </td>
-                            <td className="py-2.5 text-slate-200 max-w-[180px] truncate">
-                              {exam.topic}
-                            </td>
-                            <td className="py-2.5">
-                              <span className="px-2 py-0.5 rounded text-xs font-mono bg-slate-800 text-slate-400 capitalize">
-                                {exam.mode}
-                              </span>
-                            </td>
-                            <td className="py-2.5 text-right">
-                              <span
-                                className={`font-bold font-mono tabular-nums ${
-                                  exam.percentage >= 75
-                                    ? "text-emerald-400"
-                                    : exam.percentage >= 50
-                                    ? "text-amber-400"
-                                    : "text-red-400"
-                                }`}
-                              >
-                                {exam.percentage}%
-                              </span>
-                            </td>
-                          </tr>
-                        ))}
+                      {[...analytics!.score_trends].reverse().slice(0, 10).map((exam, i) => (
+                        <tr key={i} className="text-slate-300 hover:bg-slate-800/30 transition-colors">
+                          <td className="py-2.5 font-mono text-xs text-slate-500">{exam.date}</td>
+                          <td className="py-2.5 text-slate-200 max-w-[180px] truncate">{exam.topic}</td>
+                          <td className="py-2.5">
+                            <span className="px-2 py-0.5 rounded text-xs font-mono bg-slate-800 text-slate-400 capitalize">{exam.mode}</span>
+                          </td>
+                          <td className="py-2.5 text-right">
+                            <span className={`font-bold font-mono tabular-nums ${exam.percentage >= 75 ? "text-emerald-400" : exam.percentage >= 50 ? "text-amber-400" : "text-red-400"}`}>
+                              {exam.percentage}%
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
                     </tbody>
                   </table>
                 </div>
