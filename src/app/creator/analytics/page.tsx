@@ -19,14 +19,6 @@ export default function CreatorAnalyticsPage() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) { router.push("/login"); return; }
 
-      const { data: profile } = await supabase
-        .from("users")
-        .select("role")
-        .eq("id", user.id)
-        .single();
-
-      if (!profile || profile.role !== "creator") { router.push("/dashboard"); return; }
-
       const data = await fetchCreatorStats(user.id);
       setStats(data);
       setLoading(false);

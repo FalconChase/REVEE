@@ -9,7 +9,15 @@ import { useEffect, useState } from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase'
-import { getTopics, getUserResults, isEnrolled, getModuleBySlug } from '@/lib/supabase-quiz'
+import {
+  getTopics,
+  getUserResults,
+  isEnrolled,
+  getModuleBySlug,
+  getAccessRequestStatus,
+  requestModuleAccess,
+  type AccessRequestStatus,
+} from '@/lib/supabase-quiz'
 import type { Topic, ExamResult, Module } from '@/lib/supabase-quiz'
 import ModuleLanding from '@/components/review/ModuleLanding'
 
@@ -23,6 +31,8 @@ export default function ModulePage() {
   const [topics, setTopics] = useState<Topic[]>([])
   const [results, setResults] = useState<ExamResult[]>([])
   const [loading, setLoading] = useState(true)
+  const [requestStatus, setRequestStatus] = useState<AccessRequestStatus>('none')
+  const [requesting, setRequesting] = useState(false)
 
   useEffect(() => {
     async function load() {
@@ -34,15 +44,17 @@ export default function ModulePage() {
       setModule(mod)
       if (!mod) { setLoading(false); return }
 
-      const [enrolledStatus, topicsData, resultsData] = await Promise.all([
+      const [enrolledStatus, topicsData, resultsData, accessRequestStatus] = await Promise.all([
         isEnrolled(mod.id),
         getTopics(mod.id),
         getUserResults(mod.id),
+        getAccessRequestStatus(mod.id),
       ])
 
       setEnrolled(enrolledStatus)
       setTopics(topicsData)
       setResults(resultsData)
+      setRequestStatus(accessRequestStatus)
       setLoading(false)
     }
     load()
@@ -100,13 +112,46 @@ export default function ModulePage() {
         <div className="text-center max-w-md">
           <p className="text-4xl mb-4">🔒</p>
           <h2 className="text-xl font-bold mb-2">Access Required</h2>
-          <p className="text-zinc-500 mb-6">You need an access code to unlock this module.</p>
-          <Link
-            href="/enroll"
-            className="inline-block bg-white text-black font-semibold px-6 py-2 rounded-lg hover:bg-zinc-200 transition text-sm"
-          >
-            Enter Access Code
-          </Link>
+
+          {requestStatus === 'pending' ? (
+            <>
+              <p className="text-zinc-500 mb-6">
+                Your request to join {module.title} is waiting on the creator. You&apos;ll get
+                in as soon as they approve it.
+              </p>
+              <span className="inline-block rounded-full border border-amber-400/30 bg-amber-400/10 px-4 py-2 text-sm font-medium text-amber-300">
+                Request pending
+              </span>
+            </>
+          ) : (
+            <>
+              <p className="text-zinc-500 mb-6">
+                {requestStatus === 'denied'
+                  ? 'Your last request wasn’t approved. You can send another one, or use an access code if you have one.'
+                  : 'Ask the creator for access, or enter a code if you already have one.'}
+              </p>
+              <div className="flex flex-col gap-3 items-center">
+                <button
+                  disabled={requesting}
+                  onClick={async () => {
+                    setRequesting(true)
+                    const { error } = await requestModuleAccess(module.id)
+                    setRequesting(false)
+                    if (!error) setRequestStatus('pending')
+                  }}
+                  className="inline-block bg-emerald-400 text-black font-semibold px-6 py-2 rounded-lg hover:bg-emerald-300 transition text-sm disabled:opacity-50"
+                >
+                  {requesting ? 'Sending request…' : 'Request Access'}
+                </button>
+                <Link
+                  href="/enroll"
+                  className="text-sm text-zinc-400 hover:text-white transition"
+                >
+                  Have an access code instead?
+                </Link>
+              </div>
+            </>
+          )}
         </div>
       </div>
     )

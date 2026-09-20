@@ -161,6 +161,113 @@ export async function getQuestions(opts: {
   return questions
 }
 
+// SECTION: Creator question bank
+
+export type ImportRow = {
+  topic: string
+  question: string
+  answer: string
+  distractors: string[]
+  explanation: string
+  type: 'MC' | 'ID'
+  acceptedAnswers: string[]
+}
+
+// Parses text pasted straight out of Excel (tab-separated rows, one per line)
+// in the same column order as the "REVEE Question Bank" template:
+// Topic, Question, Answer, Distractor 1-4, Explanation, Type, Accepted Answers.
+export function parsePastedQuestions(raw: string): ImportRow[] {
+  const lines = raw.split(/\r?\n/).filter((l) => l.trim().length > 0)
+  if (lines.length === 0) return []
+
+  const cells = lines.map((l) => l.split('\t'))
+
+  // drop a header row if present
+  if (cells[0][0]?.trim().toLowerCase() === 'topic') cells.shift()
+
+  return cells.map((c) => ({
+    topic: (c[0] ?? '').trim(),
+    question: (c[1] ?? '').trim(),
+    answer: (c[2] ?? '').trim(),
+    distractors: [c[3], c[4], c[5], c[6]].map((d) => (d ?? '').trim()).filter(Boolean),
+    explanation: (c[7] ?? '').trim(),
+    type: (c[8] ?? '').trim().toUpperCase() === 'ID' ? 'ID' : 'MC',
+    acceptedAnswers: (c[9] ?? '')
+      .split(';')
+      .map((a) => a.trim())
+      .filter(Boolean),
+  }))
+}
+
+export async function createTopic(moduleId: string, name: string): Promise<{ error: string | null }> {
+  const supabase = createClient()
+  const { error } = await supabase
+    .from('question_topics')
+    .insert({ module_id: moduleId, name: name.trim() })
+
+  return { error: error?.message ?? null }
+}
+
+export async function bulkImportQuestions(
+  moduleId: string,
+  rows: ImportRow[]
+): Promise<{ imported: number; error: string | null }> {
+  const supabase = createClient()
+
+  const validRows = rows.filter((r) => r.topic && r.question && r.answer)
+  if (validRows.length === 0) return { imported: 0, error: 'No valid rows to import.' }
+
+  // resolve topics: reuse existing ones by name, create whatever's missing
+  const { data: existingTopics } = await supabase
+    .from('question_topics')
+    .select('id, name')
+    .eq('module_id', moduleId)
+
+  const topicMap = new Map<string, string>()
+  for (const t of existingTopics ?? []) topicMap.set(t.name.trim().toLowerCase(), t.id)
+
+  const missingNames = Array.from(
+    new Set(validRows.map((r) => r.topic.toLowerCase()))
+  ).filter((name) => !topicMap.has(name))
+
+  if (missingNames.length > 0) {
+    const { data: newTopics, error: topicError } = await supabase
+      .from('question_topics')
+      .insert(
+        missingNames.map((lower) => ({
+          module_id: moduleId,
+          name: validRows.find((r) => r.topic.toLowerCase() === lower)!.topic,
+        }))
+      )
+      .select('id, name')
+
+    if (topicError) return { imported: 0, error: topicError.message }
+    for (const t of newTopics ?? []) topicMap.set(t.name.trim().toLowerCase(), t.id)
+  }
+
+  const payload = validRows.map((r) => ({
+    topic_id: topicMap.get(r.topic.toLowerCase()),
+    question: r.question,
+    answer_text: r.answer,
+    distractors: r.type === 'ID' ? [] : r.distractors,
+    explanation: r.explanation || null,
+    question_type: r.type === 'ID' ? 'identification' : 'multiple_choice',
+    id_eligible: r.type === 'ID',
+    accepted_answers: r.acceptedAnswers.length > 0 ? r.acceptedAnswers : null,
+  }))
+
+  const { error: insertError } = await supabase.from('questions').insert(payload)
+  if (insertError) return { imported: 0, error: insertError.message }
+
+  return { imported: payload.length, error: null }
+}
+
+export async function deleteQuestion(questionId: string): Promise<{ error: string | null }> {
+  const supabase = createClient()
+  const { error } = await supabase.from('questions').delete().eq('id', questionId)
+  return { error: error?.message ?? null }
+}
+
 // SECTION: Enrollment
 
 type AccessCodeModuleJoin = { id: string; title: string; slug: string }
@@ -247,6 +354,124 @@ export async function isEnrolled(moduleId: string): Promise<boolean> {
     .single()
 
   return !!data
+}
+
+// SECTION: Access requests
+
+export type AccessRequestStatus = 'none' | 'pending' | 'denied'
+
+export async function getAccessRequestStatus(moduleId: string): Promise<AccessRequestStatus> {
+  const supabase = createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return 'none'
+
+  const { data } = await supabase
+    .from('module_access_requests')
+    .select('status')
+    .eq('module_id', moduleId)
+    .eq('user_id', user.id)
+    .order('requested_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  if (!data || data.status === 'approved') return 'none'
+  return data.status as AccessRequestStatus
+}
+
+export async function requestModuleAccess(moduleId: string): Promise<{ error: string | null }> {
+  const supabase = createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: 'Not signed in' }
+
+  const { error } = await supabase
+    .from('module_access_requests')
+    .insert({ module_id: moduleId, user_id: user.id })
+
+  return { error: error?.message ?? null }
+}
+
+export type PendingAccessRequest = {
+  id: string
+  module_id: string
+  user_id: string
+  requested_at: string
+  message: string | null
+  module: { title: string; slug: string } | null
+  requester: { full_name: string; email: string } | null
+}
+
+export async function getPendingAccessRequests(): Promise<PendingAccessRequest[]> {
+  const supabase = createClient()
+
+  const { data } = await supabase
+    .from('module_access_requests')
+    .select('id, module_id, user_id, requested_at, message, modules(title, slug)')
+    .eq('status', 'pending')
+    .order('requested_at', { ascending: true })
+
+  type Row = {
+    id: string
+    module_id: string
+    user_id: string
+    requested_at: string
+    message: string | null
+    modules: { title: string; slug: string } | { title: string; slug: string }[] | null
+  }
+
+  const rows = (data ?? []) as Row[]
+
+  return Promise.all(
+    rows.map(async (r) => {
+      const { data: profile } = await supabase
+        .rpc('get_user_profile', { user_id: r.user_id })
+      const mod = Array.isArray(r.modules) ? r.modules[0] ?? null : r.modules
+      return {
+        id: r.id,
+        module_id: r.module_id,
+        user_id: r.user_id,
+        requested_at: r.requested_at,
+        message: r.message,
+        module: mod,
+        requester: profile?.[0] ?? null,
+      }
+    })
+  )
+}
+
+export async function resolveAccessRequest(
+  requestId: string,
+  action: 'approve' | 'deny'
+): Promise<{ error: string | null }> {
+  const supabase = createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: 'Not signed in' }
+
+  const { data: request, error: fetchError } = await supabase
+    .from('module_access_requests')
+    .select('module_id, user_id')
+    .eq('id', requestId)
+    .single()
+
+  if (fetchError || !request) return { error: fetchError?.message ?? 'Request not found' }
+
+  if (action === 'approve') {
+    const { error: enrollError } = await supabase
+      .from('module_enrollments')
+      .insert({ module_id: request.module_id, user_id: request.user_id })
+
+    if (enrollError) return { error: enrollError.message }
+  }
+
+  const { error: updateError } = await supabase
+    .from('module_access_requests')
+    .update({
+      status: action === 'approve' ? 'approved' : 'denied',
+      resolved_at: new Date().toISOString(),
+      resolved_by: user.id,
+    })
+    .eq('id', requestId)
+
+  return { error: updateError?.message ?? null }
 }
 
 // SECTION: Exam results

@@ -17,6 +17,7 @@ type User = {
   email: string
   full_name: string
   role: string
+  is_creator: boolean
 }
 
 type Module = {
@@ -49,6 +50,7 @@ export default function DashboardPage() {
   // ----------------------------------------------------------
   const [user, setUser] = useState<User | null>(null)
   const [enrolledModules, setEnrolledModules] = useState<Module[]>([])
+  const [discoverModules, setDiscoverModules] = useState<Module[]>([])
   const [recentResults, setRecentResults] = useState<RecentResult[]>([])
   const [loading, setLoading] = useState(true)
 
@@ -75,11 +77,6 @@ export default function DashboardPage() {
         return
       }
 
-      if (data.role === 'creator') {
-        router.push('/creator')
-        return
-      }
-
       setUser(data)
 
       // Load enrolled modules
@@ -93,6 +90,19 @@ export default function DashboardPage() {
         .filter(Boolean) as Module[]
 
       setEnrolledModules(mods)
+
+      // Load discoverable public modules (not yet enrolled)
+      const enrolledIds = new Set(mods.map((m) => m.id))
+      const { data: publicModules } = await supabase
+        .from('modules')
+        .select('id, title, description, slug')
+        .eq('status', 'active')
+        .eq('visibility', 'public')
+        .order('title', { ascending: true })
+
+      setDiscoverModules(
+        (publicModules ?? []).filter((m) => !enrolledIds.has(m.id)) as Module[]
+      )
 
       // Load recent results
       const results = await getUserResults()
@@ -128,15 +138,23 @@ export default function DashboardPage() {
             <h1 className="text-3xl font-bold">Welcome, {user?.full_name} 👋</h1>
             <p className="text-zinc-400 mt-1">Your REVEE learner dashboard</p>
           </div>
-          <button
-            onClick={async () => {
-              await supabase.auth.signOut()
-              router.push('/login')
-            }}
-            className="text-zinc-500 hover:text-white text-sm transition"
-          >
-            Sign out
-          </button>
+          <div className="flex items-center gap-4">
+            <Link
+              href="/creator"
+              className="text-sm text-emerald-300 hover:text-emerald-200 transition"
+            >
+              Creator Studio
+            </Link>
+            <button
+              onClick={async () => {
+                await supabase.auth.signOut()
+                router.push('/login')
+              }}
+              className="text-zinc-500 hover:text-white text-sm transition"
+            >
+              Sign out
+            </button>
+          </div>
         </div>
 
         {/* BLOCK: Enrolled Modules */}
@@ -191,6 +209,30 @@ export default function DashboardPage() {
             </div>
           )}
         </div>
+
+        {/* BLOCK: Discover Modules */}
+        {discoverModules.length > 0 && (
+          <div className="mb-10">
+            <h2 className="text-lg font-semibold text-white mb-4">Discover</h2>
+            <div className="grid gap-4 sm:grid-cols-2">
+              {discoverModules.map((mod) => (
+                <Link
+                  key={mod.id}
+                  href={`/modules/${mod.slug}`}
+                  className="block border border-zinc-800 rounded-xl p-6 hover:border-emerald-400/30 transition group"
+                >
+                  <h3 className="font-semibold text-white group-hover:text-zinc-200 transition">
+                    {mod.title}
+                  </h3>
+                  {mod.description && (
+                    <p className="text-zinc-500 text-sm mt-1">{mod.description}</p>
+                  )}
+                  <p className="text-xs text-emerald-300 mt-3">Request access →</p>
+                </Link>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* BLOCK: Recent Activity */}
         {recentResults.length > 0 && (

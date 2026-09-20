@@ -4,16 +4,27 @@ import { useEffect, useState } from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase'
-import { generateAccessCode, getCreatorModuleStats, QUIZ_MODE_CONFIG } from '@/lib/supabase-quiz'
+import {
+  generateAccessCode,
+  getCreatorModuleStats,
+  QUIZ_MODE_CONFIG,
+  getTopics,
+  getQuestions,
+  parsePastedQuestions,
+  bulkImportQuestions,
+  deleteQuestion,
+  type Topic,
+  type Question,
+} from '@/lib/supabase-quiz'
 
-type Tab = 'codes' | 'learners' | 'scores'
+type Tab = 'codes' | 'learners' | 'scores' | 'questions'
 
 export default function CreatorModulePage() {
   const router = useRouter()
   const params = useParams()
   const moduleId = params.id as string
 
-  const [tab, setTab] = useState<Tab>('codes')
+  const [tab, setTab] = useState<Tab>('questions')
   const [stats, setStats] = useState<{ codes: any[]; enrollments: any[]; results: any[] } | null>(null)
   const [moduleName, setModuleName] = useState('')
   const [loading, setLoading] = useState(true)
@@ -25,16 +36,17 @@ export default function CreatorModulePage() {
   const [newCode, setNewCode] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
 
+  const [topics, setTopics] = useState<Topic[]>([])
+  const [questions, setQuestions] = useState<Question[]>([])
+  const [pasteText, setPasteText] = useState('')
+  const [importing, setImporting] = useState(false)
+  const [importResult, setImportResult] = useState<string | null>(null)
+
   useEffect(() => {
     async function load() {
       const supabase = createClient()
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) { router.push('/login'); return }
-
-      const { data: profile } = await supabase
-        .from('users').select('role').eq('id', user.id).single()
-
-      if (profile?.role !== 'creator') { router.push('/dashboard'); return }
 
       const { data: mod } = await supabase
         .from('modules').select('title').eq('id', moduleId).single()
@@ -43,10 +55,50 @@ export default function CreatorModulePage() {
 
       const data = await getCreatorModuleStats(moduleId)
       setStats(data)
+
+      const topicsData = await getTopics(moduleId)
+      setTopics(topicsData)
+      const questionsData = await getQuestions({ moduleId })
+      setQuestions(questionsData)
+
       setLoading(false)
     }
     load()
   }, [moduleId, router])
+
+  async function refreshQuestionBank() {
+    const topicsData = await getTopics(moduleId)
+    setTopics(topicsData)
+    const questionsData = await getQuestions({ moduleId })
+    setQuestions(questionsData)
+  }
+
+  async function handleImport() {
+    const rows = parsePastedQuestions(pasteText)
+    if (rows.length === 0) {
+      setImportResult('Nothing to import — paste rows copied from the question bank template.')
+      return
+    }
+
+    setImporting(true)
+    setImportResult(null)
+    const result = await bulkImportQuestions(moduleId, rows)
+    setImporting(false)
+
+    if (result.error) {
+      setImportResult(`Import failed: ${result.error}`)
+      return
+    }
+
+    setImportResult(`Imported ${result.imported} question${result.imported === 1 ? '' : 's'}.`)
+    setPasteText('')
+    await refreshQuestionBank()
+  }
+
+  async function handleDeleteQuestion(id: string) {
+    const { error } = await deleteQuestion(id)
+    if (!error) setQuestions((prev) => prev.filter((q) => q.id !== id))
+  }
 
   async function handleGenerate() {
     setGenerating(true)
@@ -116,7 +168,7 @@ export default function CreatorModulePage() {
         </div>
 
         <div className="flex border-b border-zinc-800 mb-8">
-          {(['codes', 'learners', 'scores'] as Tab[]).map((t) => (
+          {(['questions', 'codes', 'learners', 'scores'] as Tab[]).map((t) => (
             <button
               key={t}
               onClick={() => setTab(t)}
@@ -129,7 +181,90 @@ export default function CreatorModulePage() {
           ))}
         </div>
 
-        {tab === 'codes' && (
+        {tab === 'questions' && (
+          <div className="space-y-10">
+            <div>
+              <h2 className="text-sm font-semibold text-zinc-400 uppercase tracking-widest mb-3">
+                Paste from Excel
+              </h2>
+              <p className="text-zinc-600 text-sm mb-4">
+                Copy rows straight out of the question bank template (Topic, Question, Answer,
+                Distractor 1-4, Explanation, Type, Accepted Answers) and paste them here.
+              </p>
+              <textarea
+                value={pasteText}
+                onChange={(e) => setPasteText(e.target.value)}
+                rows={8}
+                placeholder={'Topic\tQuestion\tAnswer\tDistractor 1\tDistractor 2\tDistractor 3\tDistractor 4\tExplanation\tType\tAccepted Answers'}
+                className="w-full bg-zinc-900 border border-zinc-700 text-white px-4 py-3 rounded-lg text-sm font-mono focus:outline-none focus:border-emerald-400 placeholder:text-zinc-700 transition"
+              />
+              <div className="flex items-center gap-4 mt-3">
+                <button
+                  onClick={handleImport}
+                  disabled={importing || !pasteText.trim()}
+                  className="bg-emerald-400 text-black font-semibold text-sm px-5 py-2.5 rounded-lg hover:bg-emerald-300 transition disabled:opacity-40"
+                >
+                  {importing ? 'Importing…' : 'Import'}
+                </button>
+                {importResult && <p className="text-sm text-zinc-400">{importResult}</p>}
+              </div>
+            </div>
+
+            <div>
+              <h2 className="text-sm font-semibold text-zinc-400 uppercase tracking-widest mb-6">
+                Question Bank ({questions.length})
+              </h2>
+
+              {topics.length === 0 ? (
+                <div className="border border-dashed border-zinc-800 rounded-xl p-10 text-center">
+                  <p className="text-zinc-500">No questions yet.</p>
+                  <p className="text-zinc-600 text-sm mt-2">Paste your question bank above to get started.</p>
+                </div>
+              ) : (
+                <div className="space-y-8">
+                  {topics.map((topic) => {
+                    const topicQuestions = questions.filter((q) => q.topic_id === topic.id)
+                    if (topicQuestions.length === 0) return null
+                    return (
+                      <div key={topic.id}>
+                        <h3 className="text-white font-semibold mb-3">
+                          {topic.name}{' '}
+                          <span className="text-zinc-600 font-normal text-sm">
+                            ({topicQuestions.length})
+                          </span>
+                        </h3>
+                        <div className="space-y-2">
+                          {topicQuestions.map((q) => (
+                            <div
+                              key={q.id}
+                              className="border border-zinc-800 rounded-lg px-4 py-3 flex items-start justify-between gap-4"
+                            >
+                              <div className="min-w-0">
+                                <p className="text-white text-sm">{q.question}</p>
+                                <p className="text-emerald-300 text-xs mt-1">{q.answer_text}</p>
+                                <span className="inline-block mt-1 text-[10px] uppercase tracking-widest text-zinc-600">
+                                  {q.question_type === 'identification' ? 'Identification' : 'Multiple choice'}
+                                </span>
+                              </div>
+                              <button
+                                onClick={() => handleDeleteQuestion(q.id)}
+                                className="text-zinc-600 hover:text-red-400 text-xs shrink-0 transition"
+                              >
+                                Delete
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+                {tab === 'codes' && (
           <div className="grid md:grid-cols-2 gap-8">
             <div>
               <h2 className="text-sm font-semibold text-zinc-400 uppercase tracking-widest mb-6">
