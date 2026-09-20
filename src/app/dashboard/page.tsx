@@ -171,7 +171,7 @@ export default function DashboardPage() {
               {enrolledModules.map((mod) => (
                 <Link
                   key={mod.id}
-                  href="/modules/materials-engineering"
+                  href={`/modules/${mod.slug}`}
                   className="block border border-zinc-800 rounded-xl p-6 hover:border-zinc-600 transition group"
                 >
                   {mod.slug && (

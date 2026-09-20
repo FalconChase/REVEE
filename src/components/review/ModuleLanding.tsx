@@ -1,13 +1,15 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+// SECTION: ModuleLanding
+// The reviewee-facing module home: stats, quiz-mode picker, topic list and
+// recent attempts. Generalized from the old materials-engineering page —
+// driven entirely by the module/topics/results passed in, so it renders the
+// same way for any module.
+
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { createClient } from '@/lib/supabase'
-import { getTopics, getUserResults, isEnrolled, QUIZ_MODE_CONFIG } from '@/lib/supabase-quiz'
-import type { Topic, ExamResult } from '@/lib/supabase-quiz'
-
-const MODULE_ID = '7beeda81-5b89-4844-a671-f158297920f0'
+import { QUIZ_MODE_CONFIG } from '@/lib/supabase-quiz'
+import type { Module, Topic, ExamResult, QuizMode } from '@/lib/supabase-quiz'
 
 const MODE_ICONS: Record<string, string> = {
   mini: '⚡',
@@ -17,61 +19,23 @@ const MODE_ICONS: Record<string, string> = {
   open: '📖',
 }
 
-export default function MaterialsEngineeringPage() {
+// BLOCK: Props
+type ModuleLandingProps = {
+  module: Module
+  topics: Topic[]
+  results: ExamResult[]
+  basePath: string // e.g. `/modules/materials-engineering`
+}
+
+export default function ModuleLanding({ module, topics, results, basePath }: ModuleLandingProps) {
   const router = useRouter()
-  const [enrolled, setEnrolled] = useState<boolean | null>(null)
-  const [topics, setTopics] = useState<Topic[]>([])
-  const [results, setResults] = useState<ExamResult[]>([])
-  const [loading, setLoading] = useState(true)
-
-  useEffect(() => {
-    async function load() {
-      const supabase = createClient()
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) { router.push('/login'); return }
-
-      const [enrolledStatus, topicsData, resultsData] = await Promise.all([
-        isEnrolled(MODULE_ID),
-        getTopics(MODULE_ID),
-        getUserResults(MODULE_ID),
-      ])
-
-      setEnrolled(enrolledStatus)
-      setTopics(topicsData)
-      setResults(resultsData)
-      setLoading(false)
-    }
-    load()
-  }, [])
-
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-black flex items-center justify-center">
-        <p className="text-zinc-400">Loading...</p>
-      </div>
-    )
-  }
-
-  if (!enrolled) {
-    return (
-      <div className="min-h-screen bg-black text-white flex items-center justify-center px-6">
-        <div className="text-center max-w-md">
-          <p className="text-4xl mb-4">🔒</p>
-          <h2 className="text-xl font-bold mb-2">Access Required</h2>
-          <p className="text-zinc-500 mb-6">You need an access code to unlock this module.</p>
-          <Link
-            href="/enroll"
-            className="inline-block bg-white text-black font-semibold px-6 py-2 rounded-lg hover:bg-zinc-200 transition text-sm"
-          >
-            Enter Access Code
-          </Link>
-        </div>
-      </div>
-    )
-  }
 
   const bestScore = results.length ? Math.max(...results.map((r) => r.percentage)) : null
   const totalQuestions = topics.reduce((sum, t) => sum + (t.question_count ?? 0), 0)
+
+  // BLOCK: Available modes — filtered by the module's own available_modes
+  const offeredModes = (Object.entries(QUIZ_MODE_CONFIG) as [QuizMode, typeof QUIZ_MODE_CONFIG[QuizMode]][])
+    .filter(([mode]) => module.available_modes?.includes(mode))
 
   return (
     <div className="min-h-screen bg-black text-white px-6 py-10">
@@ -87,7 +51,7 @@ export default function MaterialsEngineeringPage() {
           <p className="text-xs text-zinc-600 uppercase tracking-widest mb-2">
             Board Licensure Examination
           </p>
-          <h1 className="text-3xl font-bold">Materials Engineering</h1>
+          <h1 className="text-3xl font-bold">{module.title}</h1>
           <p className="text-zinc-500 mt-1">
             {totalQuestions} questions · {topics.length} topics
           </p>
@@ -117,23 +81,21 @@ export default function MaterialsEngineeringPage() {
             Quiz Modes
           </h2>
           <div className="grid gap-3 sm:grid-cols-2">
-            {(Object.entries(QUIZ_MODE_CONFIG) as [string, typeof QUIZ_MODE_CONFIG[keyof typeof QUIZ_MODE_CONFIG]][]).map(
-              ([mode, config]) => (
-                <button
-                  key={mode}
-                  onClick={() => router.push(`/modules/materials-engineering/quiz?mode=${mode}`)}
-                  className="group text-left border border-zinc-800 rounded-xl p-5 hover:border-zinc-600 transition"
-                >
-                  <div className="flex items-center gap-3 mb-2">
-                    <span>{MODE_ICONS[mode]}</span>
-                    <span className="font-semibold group-hover:text-zinc-200 transition">
-                      {config.label}
-                    </span>
-                  </div>
-                  <p className="text-zinc-500 text-sm">{config.description}</p>
-                </button>
-              )
-            )}
+            {offeredModes.map(([mode, config]) => (
+              <button
+                key={mode}
+                onClick={() => router.push(`${basePath}/quiz?mode=${mode}`)}
+                className="group text-left border border-zinc-800 rounded-xl p-5 hover:border-zinc-600 transition"
+              >
+                <div className="flex items-center gap-3 mb-2">
+                  <span>{MODE_ICONS[mode]}</span>
+                  <span className="font-semibold group-hover:text-zinc-200 transition">
+                    {config.label}
+                  </span>
+                </div>
+                <p className="text-zinc-500 text-sm">{config.description}</p>
+              </button>
+            ))}
           </div>
         </div>
 

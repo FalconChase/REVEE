@@ -1,12 +1,19 @@
 import { createClient } from '@/lib/supabase'
 
+// SECTION: Types
+
+export type QuestionType = 'multiple_choice' | 'identification'
+
 export type Question = {
   id: string
   topic_id: string
   question: string
-  choices: string[]
-  answer: 'A' | 'B' | 'C' | 'D'
+  answer_text: string
+  distractors: string[]
   explanation: string | null
+  question_type: QuestionType
+  id_eligible: boolean
+  accepted_answers: string[] | null
 }
 
 export type Topic = {
@@ -30,9 +37,25 @@ export type ExamResult = {
   taken_at: string
 }
 
-const MATERIALS_MODULE_ID = '7beeda81-5b89-4844-a671-f158297920f0'
+export type ModuleStatus = 'active' | 'deactivated'
+export type ModuleVisibility = 'public' | 'hidden' | 'limited'
 
-// ─── Quiz mode config ─────────────────────────────────────────────────────────
+export type Module = {
+  id: string
+  slug: string
+  title: string
+  description: string | null
+  status: ModuleStatus
+  visibility: ModuleVisibility
+  shuffle_questions: boolean
+  shuffle_choices: boolean
+  available_modes: string[]
+  simulator_pool_rule: string
+}
+
+// BLOCK: Quiz mode config
+// Every mode here is a candidate; a module's own `available_modes` decides
+// which of these it actually offers (see ModuleLanding / quiz boot).
 
 export const QUIZ_MODE_CONFIG: Record<
   QuizMode,
@@ -70,9 +93,23 @@ export const QUIZ_MODE_CONFIG: Record<
   },
 }
 
-// ─── Topics ───────────────────────────────────────────────────────────────────
+// SECTION: Modules
 
-export async function getTopics(moduleId = MATERIALS_MODULE_ID): Promise<Topic[]> {
+export async function getModuleBySlug(slug: string): Promise<Module | null> {
+  const supabase = createClient()
+  const { data, error } = await supabase
+    .from('modules')
+    .select('id, slug, title, description, status, visibility, shuffle_questions, shuffle_choices, available_modes, simulator_pool_rule')
+    .eq('slug', slug)
+    .single()
+
+  if (error || !data) return null
+  return data as Module
+}
+
+// SECTION: Topics
+
+export async function getTopics(moduleId: string): Promise<Topic[]> {
   const supabase = createClient()
   const { data, error } = await supabase
     .from('question_topics')
@@ -84,16 +121,16 @@ export async function getTopics(moduleId = MATERIALS_MODULE_ID): Promise<Topic[]
   return data ?? []
 }
 
-// ─── Questions ────────────────────────────────────────────────────────────────
+// SECTION: Questions
 
 export async function getQuestions(opts: {
-  moduleId?: string
+  moduleId: string
   topicIds?: string[]
   limit?: number
   shuffle?: boolean
 }): Promise<Question[]> {
   const supabase = createClient()
-  const moduleId = opts.moduleId ?? MATERIALS_MODULE_ID
+  const moduleId = opts.moduleId
 
   let topicIds = opts.topicIds
   if (!topicIds || topicIds.length === 0) {
@@ -124,11 +161,14 @@ export async function getQuestions(opts: {
   return questions
 }
 
-// ─── Enrollment ───────────────────────────────────────────────────────────────
+// SECTION: Enrollment
+
+type AccessCodeModuleJoin = { id: string; title: string; slug: string }
 
 export async function enrollWithCode(code: string): Promise<{
   success: boolean
   moduleId?: string
+  moduleSlug?: string
   moduleName?: string
   error?: string
 }> {
@@ -138,7 +178,7 @@ export async function enrollWithCode(code: string): Promise<{
 
   const { data: accessCode, error: codeError } = await supabase
     .from('access_codes')
-    .select('*, modules(id, title)')
+    .select('*, modules(id, title, slug)')
     .eq('code', code.toUpperCase().trim())
     .eq('is_active', true)
     .single()
@@ -166,7 +206,8 @@ export async function enrollWithCode(code: string): Promise<{
     return {
       success: true,
       moduleId: accessCode.module_id,
-      moduleName: (accessCode.modules as any)?.title,
+      moduleSlug: (accessCode.modules as unknown as AccessCodeModuleJoin | null)?.slug,
+      moduleName: (accessCode.modules as unknown as AccessCodeModuleJoin | null)?.title,
     }
   }
 
@@ -188,7 +229,8 @@ export async function enrollWithCode(code: string): Promise<{
   return {
     success: true,
     moduleId: accessCode.module_id,
-    moduleName: (accessCode.modules as any)?.title,
+    moduleSlug: (accessCode.modules as unknown as AccessCodeModuleJoin | null)?.slug,
+    moduleName: (accessCode.modules as unknown as AccessCodeModuleJoin | null)?.title,
   }
 }
 
@@ -207,7 +249,7 @@ export async function isEnrolled(moduleId: string): Promise<boolean> {
   return !!data
 }
 
-// ─── Exam results ─────────────────────────────────────────────────────────────
+// SECTION: Exam results
 
 export async function submitExamResult(payload: {
   moduleId: string
@@ -257,7 +299,7 @@ export async function getUserResults(moduleId?: string): Promise<ExamResult[]> {
   return (data ?? []) as ExamResult[]
 }
 
-// ─── Creator ──────────────────────────────────────────────────────────────────
+// SECTION: Creator
 
 export async function generateAccessCode(opts: {
   moduleId: string

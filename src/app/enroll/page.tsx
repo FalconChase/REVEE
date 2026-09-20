@@ -10,7 +10,7 @@ export default function EnrollPage() {
   const [code, setCode] = useState('')
   const [status, setStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle')
   const [message, setMessage] = useState('')
-  const [enrolledModule, setEnrolledModule] = useState<{ id: string; name: string } | null>(null)
+  const [enrolledModule, setEnrolledModule] = useState<{ id: string; slug: string; name: string } | null>(null)
 
   function formatCode(raw: string) {
     const clean = raw.toUpperCase().replace(/[^A-Z0-9]/g, '')
@@ -33,7 +33,7 @@ export default function EnrollPage() {
 
     if (result.success) {
       setStatus('success')
-      setEnrolledModule({ id: result.moduleId!, name: result.moduleName! })
+      setEnrolledModule({ id: result.moduleId!, slug: result.moduleSlug!, name: result.moduleName! })
     } else {
       setStatus('error')
       setMessage(result.error ?? 'Something went wrong.')
@@ -59,7 +59,7 @@ export default function EnrollPage() {
             <p className="text-zinc-500 mb-1 text-sm">You now have access to:</p>
             <p className="text-white font-semibold mb-8">{enrolledModule.name}</p>
             <button
-              onClick={() => router.push('/modules/materials-engineering')}
+              onClick={() => router.push(`/modules/${enrolledModule.slug}`)}
               className="bg-white text-black font-semibold px-8 py-3 rounded-lg hover:bg-zinc-200 transition"
             >
               Start Studying →

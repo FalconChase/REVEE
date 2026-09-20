@@ -1,10 +1,11 @@
 import { create } from 'zustand'
 import { devtools } from 'zustand/middleware'
 import type { Question, QuizMode, Topic } from './supabase-quiz'
+import { isIdentificationStringCorrect, prepareQuestions, type PreparedQuestion } from './answer-matching'
 
 export type UserAnswer = {
   questionId: string
-  selected: 'A' | 'B' | 'C' | 'D' | null
+  selected: string | null
   isCorrect: boolean
   timeTaken: number
 }
@@ -20,13 +21,15 @@ type QuizStore = {
   // Config
   mode: QuizMode | null
   moduleId: string
+  shuffleQuestions: boolean
+  shuffleChoices: boolean
   selectedTopicIds: string[]
   customQuestionCount: number
   customTimeLimitMinutes: number
 
   // Session
   phase: QuizPhase
-  questions: Question[]
+  questions: PreparedQuestion[]
   topics: Topic[]
   currentIndex: number
   answers: Record<string, UserAnswer>
@@ -35,6 +38,8 @@ type QuizStore = {
   timeRemainingSeconds: number | null
 
   // Actions
+  setModuleId: (moduleId: string) => void
+  setModuleSettings: (settings: { shuffleQuestions: boolean; shuffleChoices: boolean }) => void
   setTopics: (topics: Topic[]) => void
   setMode: (mode: QuizMode) => void
   toggleTopic: (topicId: string) => void
@@ -43,7 +48,7 @@ type QuizStore = {
   setCustomCount: (n: number) => void
   setCustomTimeLimit: (min: number) => void
   startQuiz: (questions: Question[], timeLimitSeconds: number | null) => void
-  answerQuestion: (selected: 'A' | 'B' | 'C' | 'D') => void
+  answerQuestion: (selected: string) => void
   nextQuestion: () => void
   prevQuestion: () => void
   jumpToQuestion: (index: number) => void
@@ -64,7 +69,9 @@ export const useQuizStore = create<QuizStore>()(
     (set, get) => ({
       // Config
       mode: null,
-      moduleId: '7beeda81-5b89-4844-a671-f158297920f0',
+      moduleId: '',
+      shuffleQuestions: true,
+      shuffleChoices: true,
       selectedTopicIds: [],
       customQuestionCount: 50,
       customTimeLimitMinutes: 60,
@@ -80,6 +87,11 @@ export const useQuizStore = create<QuizStore>()(
       timeRemainingSeconds: null,
 
       // Actions
+      setModuleId: (moduleId) => set({ moduleId }),
+
+      setModuleSettings: (settings) =>
+        set({ shuffleQuestions: settings.shuffleQuestions, shuffleChoices: settings.shuffleChoices }),
+
       setTopics: (topics) => set({ topics, selectedTopicIds: topics.map((t) => t.id) }),
 
       setMode: (mode) => set({ mode, phase: 'setup' }),
@@ -99,17 +111,30 @@ export const useQuizStore = create<QuizStore>()(
 
       setCustomTimeLimit: (min) => set({ customTimeLimitMinutes: min }),
 
-      startQuiz: (questions, timeLimitSeconds) =>
+      // BLOCK: startQuiz
+      // Presented multiple-choice options are computed once here (via
+      // prepareQuestions) and locked into each question for the rest of the
+      // attempt - jumping between questions or reviewing later never
+      // reshuffles what the learner already saw.
+      startQuiz: (questions, timeLimitSeconds) => {
+        const { shuffleQuestions, shuffleChoices } = get()
+        const ordered = shuffleQuestions ? [...questions].sort(() => Math.random() - 0.5) : questions
         set({
           phase: 'active',
-          questions,
+          questions: prepareQuestions(ordered, shuffleChoices),
           currentIndex: 0,
           answers: {},
           startTime: Date.now(),
           questionStartTime: Date.now(),
           timeRemainingSeconds: timeLimitSeconds,
-        }),
+        })
+      },
 
+      // BLOCK: answerQuestion
+      // Grading branches on question_type: multiple-choice is exact text
+      // match against answer_text (never letter position); identification
+      // runs the fuzzy/numeric-tolerant matcher against the curated
+      // accepted answers (falling back to answer_text alone).
       answerQuestion: (selected) => {
         const { questions, currentIndex, answers, questionStartTime, mode } = get()
         const q = questions[currentIndex]
@@ -119,7 +144,11 @@ export const useQuizStore = create<QuizStore>()(
         const timeTaken = questionStartTime
           ? Math.round((Date.now() - questionStartTime) / 1000)
           : 0
-        const isCorrect = selected === q.answer
+
+        const isCorrect =
+          q.question_type === 'identification'
+            ? isIdentificationStringCorrect(selected, q.accepted_answers?.length ? q.accepted_answers : [q.answer_text])
+            : selected === q.answer_text
 
         set((s) => ({
           answers: {
